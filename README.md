@@ -73,6 +73,33 @@ Or use the wrapper:
 
 The first time, the script asks for the API key if it is not in `.env`.
 
+### Translating a whole folder
+
+Pass a folder instead of a file to translate every `.srt` in it, one by one:
+
+```powershell
+.\run.cmd "D:\Subs"
+```
+
+- Files already named `*.bg.srt` are ignored, so finished translations are
+  never fed back in.
+- Outputs are written next to each source file by default
+  (`movie.en.srt` → `movie.bg.srt`).
+- Use `--output-dir` to collect all outputs in one folder:
+
+```powershell
+.\run.cmd "D:\Subs" --output-dir "D:\Subs\Bulgarian"
+```
+
+- Add `--recursive` to include subfolders:
+
+```powershell
+.\run.cmd "D:\Subs" --recursive --output-dir "D:\Subs\Bulgarian"
+```
+
+- Existing outputs are skipped unless you pass `--overwrite`.
+- One broken file does not stop the batch; a summary is printed at the end.
+
 ### Dry run
 
 Check parsing, line lengths, and timing problems without calling the API:
@@ -87,6 +114,9 @@ No subtitle output is written in dry-run mode.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `-o`, `--output` | auto | Output file (single input only) |
+| `--output-dir` | none | Folder for translated files (folder mode) |
+| `--recursive` | off | Include `.srt` files in subfolders |
 | `--model` | `gemini-3.5-flash-lite` | Gemini model ID |
 | `--batch-size` | `40` | Cues per API request |
 | `--context` | `2` | Previous/next cues supplied as context |
@@ -97,9 +127,10 @@ No subtitle output is written in dry-run mode.
 | `--glossary` | none | JSON object of preferred terms |
 | `--no-wrap` | off | Keep translator line breaks |
 | `--no-cache` | off | Disable resume cache |
-| `--no-report` | off | Do not write QC reports |
+| `--report` | off | Write detailed QC reports |
+| `--work-dir` | OS cache dir | Where cache and QC reports are stored |
 | `--strict` | off | Exit with code 1 if QC warns |
-| `--overwrite` | off | Replace an existing output file |
+| `--overwrite` | off | Replace existing output files |
 | `--verbose` | off | Show cache hits and extra diagnostics |
 
 Run `translate_srt.py --help` for the complete list.
@@ -121,14 +152,24 @@ included in the prompt, keeping requests small.
 
 ## Output files
 
-For `movie.en.srt`, the tool normally writes:
+By default, the only file written next to your subtitles is the translation:
 
 - `movie.bg.srt` — translated subtitles
-- `movie.bg.srt.cache.json` — resume cache
-- `movie.bg.srt.qc.txt` — human-readable QC report
-- `movie.bg.srt.qc.json` — machine-readable QC report
 
-Disable the last two with `--no-report` and the cache with `--no-cache`.
+The resume cache and optional QC reports are stored outside the subtitle
+folder, in your per-user cache directory:
+
+- Windows: `%LOCALAPPDATA%\srt-translator\`
+- macOS: `~/Library/Caches/srt-translator/`
+- Linux: `~/.cache/srt-translator/`
+
+Each input gets a subfolder such as `movie.en-3f9c1a2b/` containing
+`cache.json`. Pass `--report` to also write `qc.txt` and `qc.json` there, and
+use `--work-dir PATH` to choose a different location. The cache and reports
+are never written beside the translated `.srt` unless you point `--work-dir`
+at that folder yourself.
+
+Disable the cache with `--no-cache`.
 
 ## Quality checks
 
@@ -143,7 +184,8 @@ The QC report flags:
 - invalid or zero-length cue durations
 
 These are warnings by default. Use `--strict` to make any warning produce a
-non-zero exit code.
+non-zero exit code. Detailed reports are written only with `--report`; the
+one-line summary is always printed.
 
 Automatic wrapping does not truncate text and never changes timings. If a
 translation is too long even for two full lines, it stays two lines and is
@@ -193,7 +235,12 @@ Create `.env` from `.env.example` and set `GEMINI_API_KEY`.
 Reduce `--rpm` (for example `--rpm 5`) and rerun. Completed batches are cached.
 
 **`Output already exists`**  
-Run with `--overwrite`, or choose a different `-o` path.
+Run with `--overwrite`, or choose a different `-o`/`--output-dir` path. In
+folder mode the file is skipped instead, unless `--overwrite` is given.
+
+**`No .srt files found`**  
+The folder contains no `.srt` files at the top level. Check the path, or add
+`--recursive` to include subfolders.
 
 **`block N has no valid timing line`**  
 The input is not a standard SRT file. Open it in Subtitle Edit or a text editor
