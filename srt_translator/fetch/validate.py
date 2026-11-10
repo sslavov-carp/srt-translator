@@ -26,7 +26,7 @@ _AD_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(r"^\s*(copyright|©|\(c\))\b", re.IGNORECASE),
-    re.compile(r"^\s*(www\.|https?://)\S+", re.IGNORECASE),
+    re.compile(r"(?:https?://?|www\.)\S+", re.IGNORECASE),
     re.compile(
         r"^\s*(opensubtitles|addic7ed|subscene|podnapisi|yify|subdl|"
         r"subs?\.?(sab|sunacs|yavka))\b",
@@ -36,7 +36,18 @@ _AD_PATTERNS = (
         r"^\s*(превод|субтитри|корекция|редакция|синхронизация)\b",
         re.IGNORECASE,
     ),
+    # Translator credits such as "®Translator's Heaven" or "Translated by X".
+    re.compile(r"^\s*[®©™]?\s*translator'?s?\b", re.IGNORECASE),
+    re.compile(r"\btranslated\s+by\b", re.IGNORECASE),
+    re.compile(r"^\s*[®©™]\s*\S", re.IGNORECASE),
+    # Letter-spaced group tags such as "Г Е Н Е З И С".
+    re.compile(r"^\s*(?:[A-ZА-Я] ){2,}[A-ZА-Я]\s*$"),
 )
+
+# A short, single-token name with a digit, such as "dimi123". These often sit
+# next to a translator credit and are otherwise hard to tell apart from
+# dialogue.
+_CREDIT_HANDLE_RE = re.compile(r"^(?=.*\d)[A-Za-z0-9_.-]{3,24}$")
 
 _DURATION_TOLERANCE_SECONDS = 60.0
 _DURATION_TOLERANCE_RATIO = 0.02
@@ -131,20 +142,48 @@ def is_ad_line(line: str) -> bool:
 def clean_document(document: SrtDocument) -> list[str]:
     """Remove ad/watermark lines near the start and end. Returns removed lines."""
     total = len(document.cues)
+    edge = {index for index in range(total) if index < 3 or index >= total - 3}
     removed: list[str] = []
-    kept = []
+    ad_indexes: set[int] = set()
 
-    for index, cue in enumerate(document.cues):
-        near_edge = index < 2 or index >= total - 2
+    for index in edge:
+        cue = document.cues[index]
         lines: list[str] = []
+        had_ad = False
         for line in cue.text_lines:
-            if near_edge and is_ad_line(line):
+            if is_ad_line(line):
                 removed.append(line.strip())
+                had_ad = True
                 continue
             lines.append(line)
+
+        if had_ad:
+            # The credit and the uploader handle often share one cue.
+            filtered: list[str] = []
+            for line in lines:
+                token = line.strip()
+                if token and _CREDIT_HANDLE_RE.fullmatch(token):
+                    removed.append(token)
+                else:
+                    filtered.append(line)
+            lines = filtered
+            ad_indexes.add(index)
+
         cue.text_lines = lines
-        if any(line.strip() for line in lines):
-            kept.append(cue)
+
+    # Translator handles often follow or precede the credit line itself.
+    for index in sorted(edge - ad_indexes):
+        cue = document.cues[index]
+        if not (ad_indexes & {index - 1, index + 1}):
+            continue
+        tokens = [line.strip() for line in cue.text_lines if line.strip()]
+        if tokens and all(_CREDIT_HANDLE_RE.fullmatch(token) for token in tokens):
+            removed.extend(tokens)
+            cue.text_lines = []
+
+    kept = [
+        cue for cue in document.cues if any(line.strip() for line in cue.text_lines)
+    ]
 
     if not kept:
         raise ValidationError("every cue looked like an advertisement")

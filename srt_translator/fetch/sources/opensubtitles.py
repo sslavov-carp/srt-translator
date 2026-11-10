@@ -84,7 +84,9 @@ class OpenSubtitlesSource:
 
     def _http(self) -> httpx.Client:
         if self._client is None:
-            self._client = httpx.Client(timeout=self._timeout)
+            self._client = httpx.Client(
+                timeout=self._timeout, follow_redirects=True
+            )
         return self._client
 
     def _headers(self) -> dict[str, str]:
@@ -193,14 +195,14 @@ class OpenSubtitlesSource:
                 key in params
                 for key in ("parent_tmdb_id", "parent_imdb_id", "imdb_id")
             ):
-                params["query"] = media.title
+                params["query"] = media.title.lower()
         else:
             if media.imdb_id is not None:
                 params["imdb_id"] = media.imdb_id
             elif media.tmdb_id is not None:
                 params["tmdb_id"] = media.tmdb_id
             else:
-                params["query"] = media.title
+                params["query"] = media.title.lower()
                 if media.year is not None:
                     params["year"] = media.year
 

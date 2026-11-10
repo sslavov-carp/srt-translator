@@ -617,13 +617,17 @@ def main(
         log_path = root / "fetch_log.json"
 
         limit = args.max_downloads
+        explicit_limit = limit is not None
         if limit is None:
             env_limit = os.environ.get("SUBS_MAX_DOWNLOADS", "").strip()
             if env_limit.isdigit() and int(env_limit) > 0:
                 limit = int(env_limit)
+                explicit_limit = True
             else:
                 limit = default_limit(authenticated)
-        quota = QuotaTracker(quota_path, limit=limit)
+        quota = QuotaTracker(
+            quota_path, limit=limit, allow_raise=not explicit_limit
+        )
 
         if not quota.can_download() and not args.dry_run:
             raise FetchError(

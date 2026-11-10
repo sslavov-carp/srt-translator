@@ -129,3 +129,25 @@ def test_corrupt_quota_file_is_ignored(tmp_path: Path) -> None:
     quota = QuotaTracker(path, limit=5)
 
     assert quota.remaining == 5
+
+
+def test_server_allowance_can_raise_the_default_limit(tmp_path: Path) -> None:
+    path = tmp_path / "quota.json"
+    quota = QuotaTracker(path, limit=5)
+    quota.record(remaining=99)
+
+    assert quota.limit == 100
+    assert quota.remaining == 99
+
+    reloaded = QuotaTracker(path, limit=5)
+
+    assert reloaded.limit == 100
+    assert reloaded.remaining == 99
+
+
+def test_explicit_limit_is_not_raised_by_the_server(tmp_path: Path) -> None:
+    quota = QuotaTracker(tmp_path / "quota.json", limit=5, allow_raise=False)
+    quota.record(remaining=99)
+
+    assert quota.limit == 5
+    assert quota.remaining == 4

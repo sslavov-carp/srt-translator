@@ -71,9 +71,12 @@ def test_ads_in_the_middle_are_kept() -> None:
     raw = _srt(
         ("One",),
         ("Two",),
-        ("Subtitles by SomeSite",),
         ("Three",),
+        ("Subtitles by SomeSite",),
         ("Four",),
+        ("Five",),
+        ("Six",),
+        ("Seven",),
     )
 
     result = validate(raw.encode("utf-8"), language="bg")
@@ -88,6 +91,65 @@ def test_ad_only_file_is_rejected() -> None:
         clean_document(document)
 
 
+def test_translator_credits_and_handle_are_removed() -> None:
+    raw = _srt(
+        ("http://subs.sab.bz/", "®Translator's Heaven"),
+        ("ПРЕВОД И СУБТИТРИ:", "dimi123"),
+        ("Първи ред",),
+        ("Втори ред",),
+    )
+
+    result = validate(raw.encode("utf-8"), language="bg")
+
+    assert "http://subs.sab.bz/" in result.removed_lines
+    assert "®Translator's Heaven" in result.removed_lines
+    assert "ПРЕВОД И СУБТИТРИ:" in result.removed_lines
+    assert "dimi123" in result.removed_lines
+    assert result.document.cues[0].text == "Първи ред"
+
+
+def test_standalone_translator_handle_is_removed() -> None:
+    raw = _srt(
+        ("®Translator's Heaven",),
+        ("dimi123",),
+        ("Първи ред",),
+        ("Втори ред",),
+    )
+
+    result = validate(raw.encode("utf-8"), language="bg")
+
+    assert "dimi123" in result.removed_lines
+    assert result.document.cues[0].text == "Първи ред"
+
+
+def test_short_dialogue_next_to_a_credit_is_kept() -> None:
+    raw = _srt(
+        ("Subtitles by SomeSite",),
+        ("Yes.",),
+        ("Second line",),
+    )
+
+    result = validate(raw.encode("utf-8"), language="bg")
+
+    assert result.document.cues[0].text == "Yes."
+
+
+def test_letter_spaced_group_tag_is_removed() -> None:
+    raw = _srt(
+        ("One",),
+        ("Two",),
+        ("Three",),
+        ("Four",),
+        ("Five",),
+        ("Г Е Н Е З И С",),
+    )
+
+    result = validate(raw.encode("utf-8"), language="bg")
+
+    assert "Г Е Н Е З И С" in result.removed_lines
+    assert result.document.cues[-1].text == "Five"
+
+
 @pytest.mark.parametrize(
     "line",
     [
@@ -96,6 +158,7 @@ def test_ad_only_file_is_rejected() -> None:
         "www.example.com",
         "Превод: Иван",
         "OpenSubtitles",
+        "- = http:/subs.sab.bz =-",
     ],
 )
 def test_ad_line_detection(line: str) -> None:

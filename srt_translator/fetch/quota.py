@@ -41,8 +41,9 @@ class QuotaTracker:
 
     OpenSubtitles charges a download on POST /download and returns the
     remaining quota there. The local counter protects against wasting a day's
-    allowance when the server cannot be asked, and the server value wins when
-    it is stricter.
+    allowance when the server cannot be asked. The server value wins when it is
+    stricter, and can raise the built-in default when the API key has a larger
+    allowance than expected.
     """
 
     def __init__(
@@ -51,9 +52,11 @@ class QuotaTracker:
         *,
         limit: int,
         today: date | None = None,
+        allow_raise: bool = True,
     ) -> None:
         self.path = Path(path)
         self.limit = max(1, limit)
+        self._allow_raise = allow_raise
         self._today = today or datetime.now(UTC).date()
         self.state = self._load()
 
@@ -92,6 +95,9 @@ class QuotaTracker:
                 state.downloads = 0
                 state.remaining = None
                 state.reset_time_utc = None
+
+        if self._allow_raise and state.remaining is not None:
+            self.limit = max(self.limit, state.downloads + max(0, state.remaining))
 
         return state
 
@@ -139,6 +145,10 @@ class QuotaTracker:
         self.state.downloads += 1
         if remaining is not None:
             self.state.remaining = remaining
+            if self._allow_raise:
+                self.limit = max(
+                    self.limit, self.state.downloads + max(0, remaining)
+                )
         if reset_time_utc:
             self.state.reset_time_utc = reset_time_utc
         self._save()

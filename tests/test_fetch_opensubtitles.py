@@ -127,7 +127,7 @@ def test_search_falls_back_to_title_query() -> None:
     source.search(MediaInfo(title="Inception", year=2010), "bg")
 
     params = seen[0].url.params
-    assert params["query"] == "Inception"
+    assert params["query"] == "inception"
     assert params["year"] == "2010"
 
 

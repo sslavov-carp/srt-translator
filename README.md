@@ -328,9 +328,11 @@ stored in the per-user cache directory, never next to the media:
 
 Downloads are cached, so retrying the same run does not spend quota twice.
 OpenSubtitles charges a download on `POST /download`; the local counter tracks
-the daily limit and reconciles with the server's remaining count. Use
-`--work-dir PATH` to move the cache, quota file, and log, and `--no-cache` to
-disable reuse.
+the daily limit and reconciles with the server's remaining count. If the API
+key has a larger allowance than the built-in default, the server value raises
+the limit. An explicit `--max-downloads` or `SUBS_MAX_DOWNLOADS` stays a hard
+cap. Use `--work-dir PATH` to move the cache, quota file, and log, and
+`--no-cache` to disable reuse.
 
 ### Fetch options
 
