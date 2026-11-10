@@ -25,6 +25,11 @@ def cache_root() -> Path:
     return Path.home() / ".cache" / APP_DIR_NAME
 
 
+def fetch_dir() -> Path:
+    """Return the per-user directory for fetched subtitle data."""
+    return cache_root() / "fetch"
+
+
 def work_dir_for(input_path: Path, root: Path | None = None) -> Path:
     """Return a stable per-input directory for cache and reports.
 

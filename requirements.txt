@@ -1,2 +1,5 @@
 google-genai>=3.0.0,<4
 python-dotenv>=1.2.0,<2
+httpx>=0.28.0,<1
+guessit>=4.4.0,<5
+charset-normalizer>=3.4.0,<4

@@ -1,10 +1,14 @@
-# English → Bulgarian SRT translator
+# Subtitle translator and fetcher
 
-A Python command-line tool that translates English `.srt` subtitles into
-Bulgarian while leaving every cue index and timing line untouched.
+Two command-line tools for Bulgarian subtitles:
 
-It uses the Gemini API with structured JSON output, so the translator only sees
-subtitle text and never timestamps.
+- **`translate_srt.py`** translates English `.srt` subtitles into Bulgarian
+  while leaving every cue index and timing line untouched.
+- **`fetch_subs.py`** finds and downloads subtitles for a movie or episode,
+  preferring Bulgarian and falling back to English.
+
+The translator uses the Gemini API with structured JSON output, so the model
+only sees subtitle text and never timestamps.
 
 ## What it does
 
@@ -25,7 +29,12 @@ subtitle text and never timestamps.
 
 - Windows, macOS, or Linux
 - Python 3.11 or newer
-- A Gemini API key from <https://aistudio.google.com/apikey>
+- A Gemini API key from <https://aistudio.google.com/apikey> (translating)
+- An OpenSubtitles API key (finding subtitles)
+- Optional: a TMDB API key for more accurate title matching
+
+`ffprobe` (from FFmpeg) is optional. When it is on `PATH`, fetched subtitles are
+checked against the video duration.
 
 This project was set up with Python 3.13.
 
@@ -39,13 +48,17 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-Put your real key in `.env`:
+Put your keys in `.env`:
 
 ```dotenv
 GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-3.5-flash-lite
 GEMINI_RPM=10
+OPENSUBTITLES_API_KEY=your-opensubtitles-api-key
 ```
+
+The OpenSubtitles key is only needed by `fetch_subs.py`. See
+[Finding subtitles](#finding-subtitles) for the optional account and TMDB keys.
 
 Do not commit `.env`.
 
@@ -217,14 +230,152 @@ listed in the QC report for manual review.
 
 The output file is written atomically only after translation succeeds.
 
+## Finding subtitles
+
+`fetch_subs.py` identifies a movie or episode, searches OpenSubtitles, and
+downloads the best Bulgarian subtitle. If nothing usable is found, it tries
+English. It does not translate yet: run `translate_srt.py` on the English
+fallback if you need Bulgarian.
+
+```powershell
+.\fetch.cmd "D:\Movies\Inception.2010.1080p.BluRay.x264-GRP.mkv"
+.\fetch.cmd "Breaking Bad S02E05"
+.\fetch.cmd "Inception 2010"
+.\fetch.cmd tt1375666
+.\fetch.cmd tmdb:27205
+```
+
+The input can be:
+
+- a video file: `guessit` parses the filename, and the video's OpenSubtitles
+  hash and duration are used when available
+- free text such as `Inception 2010` or `Show Name S02E05`
+- an IMDb id such as `tt1375666`
+- a TMDB id such as `tmdb:27205`
+
+### OpenSubtitles setup
+
+Create an API key at
+<https://www.opensubtitles.com/en/users/settings/api> and add it to `.env`:
+
+```dotenv
+OPENSUBTITLES_API_KEY=your-api-key
+```
+
+The API key is required for every request. To raise the daily download limit
+from 5 (anonymous) to 20, also add your OpenSubtitles account:
+
+```dotenv
+OPENSUBTITLES_USERNAME=your-username
+OPENSUBTITLES_PASSWORD=your-password
+```
+
+Optional defaults:
+
+```dotenv
+SUBS_PREFERRED_LANG=bg
+SUBS_FALLBACK_LANG=en
+SUBS_MAX_DOWNLOADS=20
+```
+
+TMDB is optional. Add `TMDB_API_KEY` to resolve titles to IMDb/TMDB ids and
+improve search accuracy; without it the script searches by title text and
+filename heuristics.
+
+### What it does
+
+1. Normalizes the input into one movie or episode.
+2. Searches every configured source for Bulgarian, then for the fallback
+   language. Searching does not spend download quota.
+3. Ranks every candidate, rejecting wrong seasons or episodes, multi-CD sets,
+   non-SRT formats, foreign-parts-only uploads, and machine translations
+   (unless `--allow-machine` is given).
+4. Downloads only the best candidate, validates it after download, and tries
+   the next candidate if it is unusable.
+5. Saves the subtitle next to the video, or in the current directory for
+   title/ID input.
+
+Ranking favors an exact file-hash match, then release tags (resolution,
+source, codec, cut, release group), then trusted uploaders, rating, download
+count, and frame rate. Season and episode mismatches are rejected outright.
+Non-hearing-impaired subtitles score higher.
+
+### Validation
+
+Every download is decoded (UTF-8, UTF-16, or legacy Windows-1251 for
+Bulgarian), parsed as SRT, and checked for cues and timestamps. Ad and
+watermark lines near the start and end are removed; pass `--no-clean` to keep
+them. When `ffprobe` is available, the subtitle length is compared with the
+video and a mismatch is reported; `--strict-duration` turns that into a
+rejection. Without `ffprobe` the check is skipped.
+
+### Fetch output files
+
+- `Movie.Name.2010.bg.srt` — preferred language
+- `Movie.Name.2010.en.srt` — fallback language
+- `Show.Name.S02E05.bg.srt` — episodes
+
+Existing files are skipped unless you pass `--overwrite`.
+
+### Cache, quota, and log
+
+Fetched files, the quota counter (`quota.json`), and `fetch_log.json` are
+stored in the per-user cache directory, never next to the media:
+
+- Windows: `%LOCALAPPDATA%\srt-translator\fetch\`
+- macOS: `~/Library/Caches/srt-translator/fetch/`
+- Linux: `~/.cache/srt-translator/fetch/`
+
+Downloads are cached, so retrying the same run does not spend quota twice.
+OpenSubtitles charges a download on `POST /download`; the local counter tracks
+the daily limit and reconciles with the server's remaining count. Use
+`--work-dir PATH` to move the cache, quota file, and log, and `--no-cache` to
+disable reuse.
+
+### Fetch options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--lang` | `bg` | Preferred subtitle language |
+| `--fallback-lang` | `en` | Language tried when the preferred one fails |
+| `--imdb` | auto | Explicit IMDb id (also `tt…` as input) |
+| `--tmdb` | auto | Explicit TMDB id (also `tmdb:…` as input) |
+| `--season`, `--episode` | auto | Episode overrides; use together |
+| `--year` | auto | Release year override |
+| `--dry-run` | off | Search and rank without downloading |
+| `--overwrite` | off | Replace an existing subtitle file |
+| `--min-score` | `50` | Reject candidates scoring below this |
+| `--max-attempts` | `2` | Try this many candidates if validation fails |
+| `--max-downloads` | `20` or `5` | Daily download limit |
+| `--allow-machine` | off | Allow machine/AI-translated subtitles |
+| `--no-hash` | off | Skip the OpenSubtitles moviehash |
+| `--no-clean` | off | Keep ad and watermark lines |
+| `--strict-duration` | off | Reject duration mismatches |
+| `--no-cache` | off | Disable the download cache |
+| `--sources` | `opensubtitles` | Comma-separated source adapters |
+| `--work-dir` | OS cache dir | Where cache, quota, and log are stored |
+| `--json` | off | Print a machine-readable result |
+| `--verbose` | off | Show score details and cache paths |
+
+Run `fetch_subs.py --help` for the complete list.
+
+### Limitations
+
+- Only OpenSubtitles is supported for now. Podnapisi, SubDL, and Bulgarian
+  community sites are planned as additional adapters.
+- It does not translate. The English fallback is left in place for
+  `translate_srt.py`.
+- Without an OpenSubtitles account the limit is 5 downloads per day.
+- Batch and folder mode are not implemented yet.
+
 ## Tests
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The tests use a fake translator, so they do not call the Gemini API or require
-an API key.
+The tests use a fake translator and fake or mocked HTTP sources, so they do
+not call the Gemini, TMDB, or OpenSubtitles APIs and do not need real keys.
 
 ## Troubleshooting
 
@@ -249,3 +400,27 @@ and check the cue structure.
 **Cyrillic looks wrong in another program**  
 The script writes UTF-8. Make sure the player or editor is not forcing a legacy
 encoding.
+
+**`OPENSUBTITLES_API_KEY is not set`**  
+Create an API key at <https://www.opensubtitles.com/en/users/settings/api> and
+add it to `.env`. The key is required even for anonymous searches.
+
+**`OpenSubtitles login failed, continuing with anonymous limits`**  
+The username or password is wrong, or the login was rate-limited. Fetching
+still works, but the daily limit drops to 5. Check the credentials in `.env`.
+
+**`daily download limit reached`**  
+Wait for the reset shown in the message, sign in with an OpenSubtitles account
+for 20 downloads per day, or raise `--max-downloads` if your account allows
+more. Use `--dry-run` to inspect candidates without spending quota.
+
+**`no usable bg candidates` / `no usable subtitles`**  
+Everything was filtered out. Run with `--dry-run --verbose` to see rejection
+reasons. Common causes are a wrong season or episode (use `--season` and
+`--episode`), only hearing-impaired or machine-translated subtitles (try
+`--allow-machine`), or a title TMDB matched incorrectly (pass `--imdb` or
+`--tmdb` explicitly). The fallback language is tried automatically.
+
+**`ffprobe not available; skipping the duration check`**  
+Optional. Install FFmpeg and add `ffprobe` to `PATH` to enable duration
+validation.

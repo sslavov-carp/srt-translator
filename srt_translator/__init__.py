@@ -1,3 +1,3 @@
-"""English-to-Bulgarian SRT translation utilities."""
+"""Subtitle translation and fetching utilities."""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
