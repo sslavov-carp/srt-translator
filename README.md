@@ -1,5 +1,8 @@
 # Subtitle translator and fetcher
 
+New here? Start with the task-first [MANUAL.md](MANUAL.md). This file is the
+detailed reference.
+
 Two command-line tools for Bulgarian subtitles:
 
 - **`translate_srt.py`** translates English `.srt` subtitles into Bulgarian
